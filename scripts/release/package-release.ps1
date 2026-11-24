@@ -55,7 +55,10 @@ try {
     foreach ($name in @('start.bat', 'stop.bat', 'status.bat')) {
         Copy-Item -LiteralPath (Join-Path $RepoRoot "scripts\$name") -Destination (Join-Path $stage "scripts\$name")
     }
-    Copy-Item -LiteralPath (Join-Path $RepoRoot 'scripts\release\runtime\*') -Destination (Join-Path $stage 'scripts')
+    $runtimeDir = Join-Path $RepoRoot 'scripts\release\runtime'
+    foreach ($file in @(Get-ChildItem -LiteralPath $runtimeDir -File)) {
+        Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $stage 'scripts')
+    }
     Copy-Item -LiteralPath (Join-Path $RepoRoot 'scripts\dev\confirm-yn.ps1') -Destination (Join-Path $stage 'scripts\confirm-yn.ps1')
 
     $utf8 = New-Object Text.UTF8Encoding $false
