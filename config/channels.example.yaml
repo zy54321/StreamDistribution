@@ -9,3 +9,10 @@ targets:
     prompt: x_en.md
     enabled: false
     service: twitter
+  - id: fb_qingsys
+    name: QingSys
+    publisher: buffer
+    channel_id: ""
+    prompt: fb_en.md
+    enabled: false
+    service: facebook

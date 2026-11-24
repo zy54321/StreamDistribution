@@ -45,6 +45,7 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
+@app.get("/api/channels", response_model=TargetsResponse)
 @app.get("/api/targets", response_model=TargetsResponse)
 def targets() -> TargetsResponse:
     items, hint = enabled_targets()
