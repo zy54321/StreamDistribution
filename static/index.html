@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Stream Distribution</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { background: #0e1117; }
+    textarea:focus, button:focus-visible, input:focus-visible, label:focus-within {
+      outline: 2px solid #6b93f0;
+      outline-offset: 2px;
+    }
+  </style>
+</head>
+<body class="bg-[#0e1117] text-[#e7ebf3] antialiased">
+  <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+    <header class="mb-4 flex items-center justify-between gap-4">
+      <div class="min-w-0">
+        <p class="text-xs tracking-[0.16em] text-[#8b95a8]">FAMILY OS · INTERNAL</p>
+        <h1 class="mt-1 text-2xl font-semibold tracking-tight">Stream Distribution</h1>
+        <p class="mt-1 text-sm text-[#8b95a8]">开发汇报 → 英文草稿 → Buffer 队列。无账号，只在本机使用。</p>
+      </div>
+      <div id="health-pill" class="shrink-0 whitespace-nowrap rounded-full border border-white/10 bg-[#171b24] px-3 py-1 text-xs text-[#8b95a8]">检查服务…</div>
+    </header>
+
+    <main class="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2">
+      <section class="flex flex-col rounded-2xl border border-white/10 bg-[#171b24] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+        <h2 class="text-sm font-medium text-[#c5cedd]">开发汇报</h2>
+        <label class="mt-2 block text-xs text-[#8b95a8]" for="report">今天改了什么、解决了什么</label>
+        <textarea id="report" rows="6" class="mt-1.5 w-full resize-y rounded-xl border border-white/10 bg-[#0e1117] px-3 py-2 text-sm leading-5 text-[#e7ebf3] placeholder:text-[#667084]" placeholder="粘贴开发汇报。写清改动和它解决的问题。"></textarea>
+
+        <div id="dropzone" class="mt-3 cursor-pointer rounded-xl border border-dashed border-white/15 bg-[#10141c] px-3 py-2.5 text-center transition hover:border-[#6b93f0]/70">
+          <p class="text-sm text-[#c5cedd]">拖拽图片到页面，或在任意位置 Ctrl+V 粘贴截图</p>
+          <p class="mt-0.5 text-xs text-[#8b95a8]">png / jpg / webp · 最多 4 张 · 单张 ≤ 5MB · 点击此处选择文件</p>
+          <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" multiple class="hidden">
+        </div>
+        <div id="thumbs" class="mt-2 grid grid-cols-2 gap-2 empty:hidden sm:grid-cols-4"></div>
+
+        <label class="mt-3 flex items-start gap-3 text-sm text-[#c5cedd]" for="include-link">
+          <input id="include-link" type="checkbox" checked class="mt-0.5 h-4 w-4 rounded border-white/20 bg-[#0e1117] text-[#6b93f0]">
+          <span>附带站点链接 <span id="link-label" class="text-[#8b95a8]">https://qingsys.com/en</span></span>
+        </label>
+
+        <div class="mt-3">
+          <h3 class="text-xs font-medium text-[#8b95a8]">目标渠道</h3>
+          <div id="targets" class="mt-1.5 space-y-1.5"></div>
+          <p id="targets-hint" class="mt-1.5 text-xs text-amber-300/90"></p>
+        </div>
+
+        <button id="generate-btn" type="button" class="mt-3 w-full rounded-xl bg-[#3d6fd8] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#4d7be0] disabled:cursor-not-allowed disabled:opacity-60">生成推文草稿</button>
+      </section>
+
+      <section class="flex h-full min-h-0 flex-col rounded-2xl border border-white/10 bg-[#171b24] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-sm font-medium text-[#c5cedd]">推文草稿</h2>
+          <p id="char-count" class="shrink-0 text-sm text-[#8b95a8]">0 字符</p>
+        </div>
+        <label class="mt-2 block text-xs text-[#8b95a8]" for="draft">可直接修改后再入队</label>
+        <textarea id="draft" rows="6" class="mt-1.5 min-h-0 w-full flex-1 resize-y rounded-xl border border-white/10 bg-[#0e1117] px-3 py-2 text-sm leading-5 text-[#e7ebf3]"></textarea>
+        <p id="feedback" class="mt-2 h-5 truncate text-xs leading-5 text-[#8b95a8]">尚未发布。</p>
+        <div class="mt-2 grid shrink-0 grid-cols-2 gap-2">
+          <button id="publish-btn" type="button" class="rounded-xl bg-[#2f9e6b] px-3 py-2.5 text-sm font-medium text-white hover:bg-[#38b07a] disabled:cursor-not-allowed disabled:opacity-60">推入 Buffer 队列</button>
+          <button id="send-now-btn" type="button" class="rounded-xl border border-amber-300/80 bg-amber-400/10 px-3 py-2.5 text-sm font-medium text-amber-100 hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60">立即发送</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const MAX_IMAGES = 4;
+    const state = { targets: [], images: [] };
+    let imageSeq = 0;
+
+    const $ = (id) => document.getElementById(id);
+
+    function detailOf(payload) {
+      if (!payload) return "";
+      const detail = payload.detail;
+      if (typeof detail === "string") return detail;
+      if (Array.isArray(detail)) {
+        return detail.map((item) => item.msg || JSON.stringify(item)).join("；");
+      }
+      return payload.message || "";
+    }
+
+    async function api(path, options) {
+      const response = await fetch(path, options);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(detailOf(payload) || `请求失败（${response.status}）`);
+      }
+      return payload;
+    }
+
+    function setBusy(button, busy, busyText) {
+      if (!button.dataset.label) button.dataset.label = button.textContent;
+      button.disabled = busy;
+      button.textContent = busy ? busyText : button.dataset.label;
+    }
+
+    function setFeedback(kind, message) {
+      const box = $("feedback");
+      const tone = kind === "ok"
+        ? "text-emerald-200"
+        : kind === "error"
+          ? "text-rose-200"
+          : "text-[#8b95a8]";
+      box.className = `mt-2 h-5 truncate text-xs leading-5 ${tone}`;
+      box.textContent = message;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function updateCount() {
+      const count = [...$("draft").value].length;
+      const el = $("char-count");
+      if (count > 280) {
+        el.textContent = `${count} 字符 · 已超过 280，部分 X 账号可能被截断`;
+        el.className = "text-sm text-amber-300";
+      } else {
+        el.textContent = `${count} 字符`;
+        el.className = "text-sm text-[#8b95a8]";
+      }
+    }
+
+    function selectedTargetIds() {
+      return [...document.querySelectorAll('input[name="target"]:checked')].map((el) => el.value);
+    }
+
+    function renderTargets() {
+      const root = $("targets");
+      const hint = $("targets-hint");
+      if (!state.targets.length) {
+        root.innerHTML = "";
+        return;
+      }
+      hint.textContent = "";
+      root.innerHTML = state.targets.map((target) => {
+        const meta = [target.service, target.publisher].filter(Boolean).join(" · ");
+        const missing = target.channel_id ? "" : " · 未填 channel_id";
+        return `<label class="flex items-start gap-3 rounded-xl border border-white/10 bg-[#10141c] px-3 py-2 text-sm">
+          <input class="mt-1 h-4 w-4" type="checkbox" name="target" value="${escapeHtml(target.id)}">
+          <span>
+            <span class="block text-[#e7ebf3]">${escapeHtml(target.name)}</span>
+            <span class="block text-xs text-[#8b95a8]">${escapeHtml(meta)}${escapeHtml(missing)}</span>
+          </span>
+        </label>`;
+      }).join("");
+      const boxes = root.querySelectorAll('input[name="target"]');
+      if (boxes.length === 1) boxes[0].checked = true;
+    }
+
+    function renderThumbs() {
+      const root = $("thumbs");
+      root.innerHTML = state.images.map((item) => {
+        const status = item.status === "uploading"
+          ? "上传中"
+          : item.status === "error"
+            ? escapeHtml(item.error || "上传失败")
+            : "已上传";
+        const tone = item.status === "error" ? "text-rose-300" : "text-[#8b95a8]";
+        return `<figure class="overflow-hidden rounded-xl border border-white/10 bg-[#0e1117]">
+          <img src="${escapeHtml(item.preview)}" alt="" class="h-16 w-full object-cover">
+          <figcaption class="flex items-center justify-between gap-2 px-2 py-1.5">
+            <span class="truncate text-[11px] ${tone}">${status}</span>
+            <button type="button" data-remove="${item.id}" class="text-[11px] text-[#c5cedd] hover:text-white">删除</button>
+          </figcaption>
+        </figure>`;
+      }).join("");
+    }
+
+    function removeImage(id) {
+      const item = state.images.find((image) => image.id === id);
+      if (!item) return;
+      item.removed = true;
+      URL.revokeObjectURL(item.preview);
+      state.images = state.images.filter((image) => image.id !== id);
+      renderThumbs();
+    }
+
+    function addFiles(fileList) {
+      const incoming = [...fileList];
+      if (!incoming.length) return;
+      const room = MAX_IMAGES - state.images.length;
+      if (room <= 0) {
+        setFeedback("error", "最多 4 张图片。");
+        return;
+      }
+      const accepted = incoming.slice(0, room);
+      if (incoming.length > room) {
+        setFeedback("error", `最多 4 张图片，已忽略多余的 ${incoming.length - room} 张。`);
+      }
+      for (const file of accepted) {
+        const item = {
+          id: ++imageSeq,
+          name: file.name || "clipboard.png",
+          preview: URL.createObjectURL(file),
+          url: "",
+          status: "uploading",
+          error: "",
+          removed: false,
+        };
+        state.images.push(item);
+        uploadOne(item, file);
+      }
+      renderThumbs();
+    }
+
+    async function uploadOne(item, file) {
+      const body = new FormData();
+      body.append("file", file, item.name);
+      try {
+        const data = await api("/api/upload", { method: "POST", body });
+        if (item.removed) return;
+        item.url = data.url;
+        item.status = "done";
+      } catch (error) {
+        if (item.removed) return;
+        item.status = "error";
+        item.error = error.message;
+      }
+      renderThumbs();
+    }
+
+    async function loadTargets() {
+      try {
+        const data = await api("/api/targets");
+        state.targets = data.targets || [];
+        if (data.site_link) $("link-label").textContent = data.site_link;
+        renderTargets();
+        if (!state.targets.length) {
+          $("targets-hint").textContent = data.hint || "没有已启用的渠道。";
+        }
+      } catch (error) {
+        $("targets-hint").textContent = error.message;
+      }
+    }
+
+    async function generateDraft() {
+      const report = $("report").value.trim();
+      const ids = selectedTargetIds();
+      if (!report) {
+        setFeedback("error", "请先粘贴开发汇报。");
+        return;
+      }
+      if (!ids.length) {
+        setFeedback("error", "请至少选择一个渠道。");
+        return;
+      }
+      if ($("draft").value.trim() && !confirm("右侧已有草稿，生成会覆盖它。继续？")) return;
+
+      const button = $("generate-btn");
+      setBusy(button, true, "生成中…");
+      try {
+        const data = await api("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            report,
+            target_id: ids[0],
+            include_site_link: $("include-link").checked,
+          }),
+        });
+        $("draft").value = data.text || "";
+        updateCount();
+        const name = state.targets.find((target) => target.id === ids[0])?.name || ids[0];
+        const extra = ids.length > 1 ? " 多个渠道时，草稿使用第一个选中渠道的 Prompt。" : "";
+        setFeedback("ok", `已根据「${name}」生成草稿。${extra}`);
+      } catch (error) {
+        setFeedback("error", error.message);
+      } finally {
+        setBusy(button, false);
+      }
+    }
+
+    function formatDue(value) {
+      if (!value) return "已入队（接口未返回 dueAt）";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return String(value);
+      return date.toLocaleString();
+    }
+
+    function setPublishBusy(busy, activeButton, busyText) {
+      for (const button of [$("publish-btn"), $("send-now-btn")]) {
+        button.disabled = busy;
+      }
+      setBusy(activeButton, busy, busyText);
+    }
+
+    async function publishDraft(mode) {
+      const sendNow = mode === "now";
+      if (sendNow && !confirm("确认立即公开发布到已选渠道？")) return;
+
+      const text = $("draft").value.trim();
+      const ids = selectedTargetIds();
+      if (!text) {
+        setFeedback("error", "推文不能为空。");
+        return;
+      }
+      if (!ids.length) {
+        setFeedback("error", "请至少选择一个渠道。");
+        return;
+      }
+      if (state.images.some((item) => item.status === "uploading")) {
+        setFeedback("error", "图片仍在上传，请稍候。");
+        return;
+      }
+      if (state.images.some((item) => item.status === "error")) {
+        setFeedback("error", "有图片上传失败。删除失败项后再发送。");
+        return;
+      }
+
+      const button = sendNow ? $("send-now-btn") : $("publish-btn");
+      setPublishBusy(true, button, sendNow ? "发送中…" : "入队中…");
+      try {
+        const data = await api("/api/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            target_ids: ids,
+            text,
+            image_urls: state.images.map((item) => item.url).filter(Boolean),
+            mode: sendNow ? "now" : "queue",
+          }),
+        });
+        const notice = data.message || (sendNow ? "已立即发送" : "已推入队列");
+        const lines = (data.results || []).map((item) => {
+          const name = state.targets.find((target) => target.id === item.target_id)?.name || item.target_id;
+          if (item.ok) {
+            const post = item.post || {};
+            const when = sendNow ? "" : `计划时间 ${formatDue(post.dueAt)}。`;
+            return `${name} ${item.message || notice}。${when}post ${post.id || "—"}`;
+          }
+          return `${name} 失败：${item.error || "未知错误"}`;
+        });
+        const allOk = (data.results || []).every((item) => item.ok);
+        setFeedback(allOk ? "ok" : "error", lines.join(" ") || notice);
+      } catch (error) {
+        setFeedback("error", error.message);
+      } finally {
+        setPublishBusy(false, button);
+      }
+    }
+
+    function filesFromClipboard(event) {
+      const items = event.clipboardData?.items;
+      if (!items) return [];
+      const files = [];
+      for (const item of items) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) files.push(file);
+        }
+      }
+      return files;
+    }
+
+    document.addEventListener("paste", (event) => {
+      const files = filesFromClipboard(event);
+      if (!files.length) return;
+      event.preventDefault();
+      addFiles(files);
+    });
+
+    ["dragenter", "dragover"].forEach((name) => {
+      document.addEventListener(name, (event) => {
+        if (![...(event.dataTransfer?.types || [])].includes("Files")) return;
+        event.preventDefault();
+        $("dropzone").classList.add("border-[#6b93f0]");
+      });
+    });
+
+    document.addEventListener("dragleave", () => {
+      $("dropzone").classList.remove("border-[#6b93f0]");
+    });
+
+    document.addEventListener("drop", (event) => {
+      if (!event.dataTransfer?.files?.length) return;
+      event.preventDefault();
+      $("dropzone").classList.remove("border-[#6b93f0]");
+      addFiles(event.dataTransfer.files);
+    });
+
+    $("dropzone").addEventListener("click", (event) => {
+      if (event.target.closest("input")) return;
+      $("file-input").click();
+    });
+    $("file-input").addEventListener("change", () => {
+      addFiles($("file-input").files);
+      $("file-input").value = "";
+    });
+    $("thumbs").addEventListener("click", (event) => {
+      const button = event.target.closest("[data-remove]");
+      if (!button) return;
+      removeImage(Number(button.dataset.remove));
+    });
+    $("draft").addEventListener("input", updateCount);
+    $("generate-btn").addEventListener("click", generateDraft);
+    $("publish-btn").addEventListener("click", () => publishDraft("queue"));
+    $("send-now-btn").addEventListener("click", () => publishDraft("now"));
+
+    fetch("/api/health")
+      .then((response) => response.json())
+      .then((data) => {
+        $("health-pill").textContent = data.status === "ok" ? "服务正常" : "服务异常";
+        $("health-pill").className = data.status === "ok"
+          ? "shrink-0 whitespace-nowrap rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-200"
+          : "shrink-0 whitespace-nowrap rounded-full border border-rose-400/30 bg-rose-400/10 px-3 py-1 text-xs text-rose-200";
+      })
+      .catch(() => {
+        $("health-pill").textContent = "无法连接";
+      });
+
+    loadTargets();
+    updateCount();
+  </script>
+</body>
+</html>

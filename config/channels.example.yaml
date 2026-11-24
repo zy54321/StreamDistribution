@@ -1,0 +1,11 @@
+# 复制为 config/channels.yaml 后填写。
+# channel_id 从 GET /api/buffer/channels 的返回里取。
+# 每个 target 绑定一个 publisher、channel_id、prompt 文件和 enabled。
+targets:
+  - id: x_main
+    name: X Main
+    publisher: buffer
+    channel_id: ""
+    prompt: x_en.md
+    enabled: false
+    service: twitter
