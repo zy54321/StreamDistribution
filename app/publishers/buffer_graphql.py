@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -53,6 +54,12 @@ class BufferError(RuntimeError):
     """Raised when Buffer returns an error or an unusable payload."""
 
 
+logger = logging.getLogger("app.publishers.buffer_graphql")
+
+# FacebookPostMetadataInput.type is a required PostTypeFacebook enum.
+FACEBOOK_POST_TYPE = "post"
+
+
 # CreatePostInput.mode uses these GraphQL enum values.
 BUFFER_MODES = {
     "queue": "addToQueue",
@@ -61,7 +68,14 @@ BUFFER_MODES = {
 
 
 class BufferGraphQLPublisher(BasePublisher):
-    def publish(self, channel_id: str, text: str, image_urls: list[str], mode: str) -> dict:
+    def publish(
+        self,
+        channel_id: str,
+        text: str,
+        image_urls: list[str],
+        mode: str,
+        service: str = "",
+    ) -> dict:
         buffer_mode = BUFFER_MODES.get(mode)
         if buffer_mode is None:
             raise BufferError(f"不支持的发布模式：{mode}")
@@ -76,8 +90,20 @@ class BufferGraphQLPublisher(BasePublisher):
         }
         if image_urls:
             payload["assets"] = [{"image": {"url": url}} for url in image_urls]
+        if (service or "").strip().lower() == "facebook":
+            payload["metadata"] = {"facebook": {"type": FACEBOOK_POST_TYPE}}
 
-        data = self._graphql(CREATE_POST_MUTATION, {"input": payload})
+        try:
+            data = self._graphql(CREATE_POST_MUTATION, {"input": payload})
+        except BufferError as exc:
+            logger.error(
+                "buffer createPost failed channel_id=%s service=%s mode=%s detail=%s",
+                channel_id,
+                service or "",
+                buffer_mode,
+                exc,
+            )
+            raise
         result = data.get("createPost")
         if not isinstance(result, dict):
             raise BufferError("Buffer 返回空的 createPost")

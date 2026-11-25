@@ -145,6 +145,7 @@ def publish(body: PublishRequest) -> PublishResponse:
                 text,
                 [url for url in body.image_urls if url.strip()],
                 body.mode,
+                service=target.get("service") or "",
             )
             results.append(PublishItem(target_id=target_id, ok=True, post=post, message=notice))
         except (ConfigError, BufferError, StorageError, ValueError, RuntimeError) as exc:

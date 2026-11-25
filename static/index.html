@@ -27,7 +27,7 @@
     </header>
 
     <main class="grid grid-cols-1 items-stretch gap-3 lg:grid-cols-2">
-      <section class="flex flex-col rounded-2xl border border-white/10 bg-[#171b24] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+      <section class="flex h-full flex-col rounded-2xl border border-white/10 bg-[#171b24] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
         <h2 class="text-sm font-medium text-[#c5cedd]">开发汇报</h2>
         <label class="mt-2 block text-xs text-[#8b95a8]" for="report">今天改了什么、解决了什么</label>
         <textarea id="report" rows="6" class="mt-1.5 w-full resize-y rounded-xl border border-white/10 bg-[#0e1117] px-3 py-2 text-sm leading-5 text-[#e7ebf3] placeholder:text-[#667084]" placeholder="粘贴开发汇报。写清改动和它解决的问题。"></textarea>
@@ -50,7 +50,9 @@
           <p id="targets-hint" class="mt-1.5 text-xs text-amber-300/90"></p>
         </div>
 
-        <button id="generate-btn" type="button" class="mt-3 w-full rounded-xl bg-[#3d6fd8] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#4d7be0] disabled:cursor-not-allowed disabled:opacity-60">生成推文草稿</button>
+        <div class="mt-auto pt-3">
+          <button id="generate-btn" type="button" class="w-full rounded-xl bg-[#3d6fd8] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#4d7be0] disabled:cursor-not-allowed disabled:opacity-60">生成推文草稿</button>
+        </div>
       </section>
 
       <section class="flex h-full min-h-0 flex-col rounded-2xl border border-white/10 bg-[#171b24] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
@@ -60,7 +62,7 @@
         </div>
         <label class="mt-2 block text-xs text-[#8b95a8]" for="draft">可直接修改后再入队</label>
         <textarea id="draft" rows="6" class="mt-1.5 min-h-0 w-full flex-1 resize-y rounded-xl border border-white/10 bg-[#0e1117] px-3 py-2 text-sm leading-5 text-[#e7ebf3]"></textarea>
-        <p id="feedback" class="mt-2 h-5 truncate text-xs leading-5 text-[#8b95a8]">尚未发布。</p>
+        <div id="feedback" class="mt-2 space-y-1 text-xs leading-5 text-[#8b95a8]"></div>
         <div class="mt-2 grid shrink-0 grid-cols-2 gap-2">
           <button id="publish-btn" type="button" class="rounded-xl bg-[#2f9e6b] px-3 py-2.5 text-sm font-medium text-white hover:bg-[#38b07a] disabled:cursor-not-allowed disabled:opacity-60">推入 Buffer 队列</button>
           <button id="send-now-btn" type="button" class="rounded-xl border border-amber-300/80 bg-amber-400/10 px-3 py-2.5 text-sm font-medium text-amber-100 hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-60">立即发送</button>
@@ -102,14 +104,25 @@
     }
 
     function setFeedback(kind, message) {
+      setFeedbackLines([{ kind, text: message }]);
+    }
+
+    function setFeedbackLines(lines) {
       const box = $("feedback");
-      const tone = kind === "ok"
-        ? "text-emerald-200"
-        : kind === "error"
-          ? "text-rose-200"
-          : "text-[#8b95a8]";
-      box.className = `mt-2 h-5 truncate text-xs leading-5 ${tone}`;
-      box.textContent = message;
+      box.className = "mt-2 space-y-1 text-xs leading-5";
+      box.replaceChildren();
+      const items = lines.length ? lines : [{ kind: "idle", text: "尚未发布。" }];
+      for (const line of items) {
+        const row = document.createElement("p");
+        const tone = line.kind === "ok"
+          ? "text-emerald-200"
+          : line.kind === "error"
+            ? "text-rose-200"
+            : "text-[#8b95a8]";
+        row.className = `whitespace-normal break-words ${tone}`;
+        row.textContent = line.text;
+        box.appendChild(row);
+      }
     }
 
     function escapeHtml(value) {
@@ -338,12 +351,11 @@
           if (item.ok) {
             const post = item.post || {};
             const when = sendNow ? "" : `计划时间 ${formatDue(post.dueAt)}。`;
-            return `${name} ${item.message || notice}。${when}post ${post.id || "—"}`;
+            return { kind: "ok", text: `${name} ${item.message || notice}。${when}post ${post.id || "—"}` };
           }
-          return `${name} 失败：${item.error || "未知错误"}`;
+          return { kind: "error", text: `${name} 失败：${item.error || "未知错误"}` };
         });
-        const allOk = (data.results || []).every((item) => item.ok);
-        setFeedback(allOk ? "ok" : "error", lines.join(" ") || notice);
+        setFeedbackLines(lines.length ? lines : [{ kind: "ok", text: notice }]);
       } catch (error) {
         setFeedback("error", error.message);
       } finally {
@@ -420,6 +432,7 @@
         $("health-pill").textContent = "无法连接";
       });
 
+    setFeedback("idle", "尚未发布。");
     loadTargets();
     updateCount();
   </script>
